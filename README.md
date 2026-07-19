@@ -1,77 +1,61 @@
 # Smart Update Manager
 
-Script tự động cập nhật Proxmox VE Host + tất cả LXC containers, bao gồm cả các dịch vụ đã cấu hình.
+Tự động cập nhật Proxmox VE Host + tất cả LXC containers, bao gồm cả các dịch vụ đã cấu hình.
 
 ## Tính năng
 
-- Tự động quét tất cả LXC containers (kể cả container mới)
+- Hỗ trợ tiếng Việt và English (chọn khi chạy lần đầu)
+- Setup Wizard: Mac dinh / Tuy chinh / Cai dat sau
+- Tu dong phat hien services trong LXC containers
 - Update OS packages cho host và tất cả containers
-- Update service-specific (cloudflared, nginx, vaultwarden, telecloud, v.v.)
-- Interactive menu để dễ sử dụng
+- Update service-specific (cloudflared, nginx, vaultwarden, v.v.)
+- Interactive menu
 - Logging đầy đủ
-- Hỗ trợ nhiều OS: Debian, Ubuntu, CentOS, AlmaLinux, Alpine, openSUSE
-- Config file để thêm/sửa/xóa service updates
-
-## Yêu cầu
-
-- Proxmox VE 7.x hoặc mới hơn
-- Bash 4.0+
-- whiptail (cho menu interactive)
+- Hỗ trợ Debian, Ubuntu, CentOS, AlmaLinux, Alpine, openSUSE
+- Config file để them/sua/xoa service updates
 
 ## Cài đặt
 
 ```bash
-# Clone hoặc copy script
-git clone https://github.com/yourusername/smart-update.git
-cd smart-update
-chmod +x smart-update
-
-# Copy vào hệ thống
-sudo cp smart-update /usr/local/bin/
-sudo mkdir -p /etc/smart-update
-
-# Tạo crontab (00:00 Thứ Hai hàng tuần)
-echo "0 0 * * 1 /usr/local/bin/smart-update >>/var/log/smart-update.log 2>&1" | sudo crontab -
+# One-line install
+curl -fsSL https://raw.githubusercontent.com/viettien2008/smart-update/main/install.sh | sudo bash
 ```
 
 ## Sử dụng
 
-### Menu interactive
 ```bash
+# Menu interactive
 smart-update
-```
-
-### CLI commands
-```bash
-# Xem danh sách services
-smart-update --list
-
-# Thêm service update
-smart-update --add <CT_ID> <SERVICE_NAME> "<UPDATE_COMMAND>"
-
-# Xóa service update
-smart-update --remove <CT_ID> <SERVICE_NAME>
 
 # Xem help
 smart-update --help
+
+# Xem services
+smart-update --list
+
+# Them service
+smart-update --add <CT_ID> <SERVICE_NAME> "<UPDATE_COMMAND>"
+
+# Xoa service
+smart-update --remove <CT_ID> <SERVICE_NAME>
+
+# Tu dong phat hien services
+smart-update --detect
+
+# Doi ngon ngu
+smart-update --lang vi   # Tieng Viet
+smart-update --lang en   # English
 ```
 
 ## Cấu trúc files
 
 ```
 /usr/local/bin/smart-update          # Script chính
-/etc/smart-update/services.conf      # Config service updates
+/etc/smart-update/config             # Cau hinh
+/etc/smart-update/services.conf      # Service updates
+/etc/smart-update/language           # Ngon ngu da chon
 /etc/update-lxcs.conf                # Exclude list (optional)
 /var/log/smart-update.log            # Log file
-```
-
-## Ví dụ cấu hình services.conf
-
-```bash
-# Format: CONTAINER_ID|SERVICE_NAME|UPDATE_COMMAND
-100|cloudflared|pct exec 100 -- yum update -y cloudflared
-101|nginx|pct exec 101 -- dnf update -y nginx
-102|vaultwarden|pct exec 102 -- podman pull ghcr.io/dani-garcia/vaultwarden:latest && pct exec 102 -- systemctl restart vaultwarden
 ```
 
 ## License
