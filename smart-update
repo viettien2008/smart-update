@@ -1,88 +1,227 @@
 #!/usr/bin/env bash
 
 # Smart Update Manager for Proxmox VE
-# Version: 1.0.0
+# Version: 2.0.0
 # License: MIT
 
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-BOLD='\033[1m'
-VERSION="1.0.0"
-
+VERSION="2.0.0"
 CONF_DIR="/etc/smart-update"
+CONFIG_FILE="${CONF_DIR}/config"
 EXCLUDE_FILE="/etc/update-lxcs.conf"
 SERVICES_FILE="${CONF_DIR}/services.conf"
 LOG_FILE="/var/log/smart-update.log"
+FIRST_RUN="${CONF_DIR}/.first_run"
 
-TOTAL_HOST_UPDATES=0
-TOTAL_CT_UPDATED=0
-TOTAL_CT_SKIPPED=0
-TOTAL_CT_ERRORS=0
-TOTAL_SERVICE_UPDATES=0
-REBOOT_REQUIRED=0
+# ============================================================
+# LANGUAGE SYSTEM
+# ============================================================
 
-# Security: Ensure proper permissions
-ensure_permissions() {
-    if [[ -f "$SERVICES_FILE" ]]; then
-        local perms
-        perms=$(stat -c %a "$SERVICES_FILE" 2>/dev/null || echo "000")
-        if [[ "$perms" != "600" && "$perms" != "640" ]]; then
-            chmod 600 "$SERVICES_FILE"
-            echo -e "${YELLOW}[WARN] Fixed permissions on services.conf${NC}"
-        fi
+LANG_FILE="${CONF_DIR}/language"
+
+load_language() {
+    if [[ -f "$LANG_FILE" ]]; then
+        CURRENT_LANG=$(cat "$LANG_FILE")
+    else
+        CURRENT_LANG="vi"
     fi
 }
 
-# Security: Validate input format
+save_language() {
+    echo "$1" > "$LANG_FILE"
+    CURRENT_LANG="$1"
+}
+
+# Vietnamese
+msg_vi() {
+    case "$1" in
+        title) echo "QUAN LY CAP NHAT THONG MINH" ;;
+        welcome) echo "Chao mung den voi Smart Update Manager!" ;;
+        select_lang) echo "Chon ngon ngu / Select language:" ;;
+        lang_vi) echo "1) Tieng Viet" ;;
+        lang_en) echo "2) English" ;;
+        select_action) echo "Chon thuc hien:" ;;
+        opt_full) echo "1) Cap nhat toan bo (Host + Tat ca LXC)" ;;
+        opt_host) echo "2) Chi cap nhat Host" ;;
+        opt_lxc) echo "3) Chi cap nhat LXC containers" ;;
+        opt_services) echo "4) Xem danh sach services" ;;
+        opt_add) echo "5) Them service update" ;;
+        opt_remove) echo "6) Xoa service update" ;;
+        opt_log) echo "7) Xem log gan nhat" ;;
+        opt_check) echo "8) Kiem tra updates (khong cap nhat)" ;;
+        opt_settings) echo "9) Cai dat" ;;
+        opt_exit) echo "0) Thoat" ;;
+        confirm) echo "Xac nhan? [y/N]" ;;
+        yes) echo "y" ;;
+        no) echo "N" ;;
+        done) echo "Hoan thanh!" ;;
+        enter_continue) echo "Nhan Enter de tiep tuc..." ;;
+        input_ct_id) echo "Nhap Container ID (VD: 100):" ;;
+        input_service) echo "Nhap ten service (VD: nginx):" ;;
+        input_cmd) echo "Nhap lenh update:" ;;
+        input_id) echo "Nhap Container ID can xoa:" ;;
+        added) echo "Da them:" ;;
+        removed) echo "Da xoa:" ;;
+        no_log) echo "Chua co log." ;;
+        log_title) echo "Log gan nhat (30 dong cuoi)" ;;
+        host_updates) echo "packages can update" ;;
+        lxc_containers) echo "LXC Containers:" ;;
+        exit_msg) echo "Tam biet!" ;;
+        invalid) echo "Lua chon khong hop le!" ;;
+        # Settings
+        settings_title) echo "CAI DAT" ;;
+        settings_default) echo "1) Cai dat mac dinh (Khoa dong)" ;;
+        settings_custom) echo "2) Cai dat tuy chinh" ;;
+        settings_later) echo "3) Cai dat sau" ;;
+        # Service detection
+        detect_title) echo "PHAT HIEN DICH VU" ;;
+        detect_auto) echo "1) Tu dong phat hien tat ca dich vu" ;;
+        detect_manual) echo "2) Them thu cong" ;;
+        detect_later) echo "3) Cai dat sau" ;;
+        detected) echo "Da phat hien:" ;;
+        # Setup
+        setup_crontab) echo "Thiet lap Crontab (00:00 Thu Hai)..." ;;
+        setup_done) echo "Cai dat hoan thanh!" ;;
+        *) echo "$1" ;;
+    esac
+}
+
+# English
+msg_en() {
+    case "$1" in
+        title) echo "SMART UPDATE MANAGER" ;;
+        welcome) echo "Welcome to Smart Update Manager!" ;;
+        select_lang) echo "Select language:" ;;
+        lang_vi) echo "1) Tieng Viet" ;;
+        lang_en) echo "2) English" ;;
+        select_action) echo "Select action:" ;;
+        opt_full) echo "1) Update all (Host + All LXC)" ;;
+        opt_host) echo "2) Update Host only" ;;
+        opt_lxc) echo "3) Update LXC containers only" ;;
+        opt_services) echo "4) View services list" ;;
+        opt_add) echo "5) Add service update" ;;
+        opt_remove) echo "6) Remove service update" ;;
+        opt_log) echo "7) View recent log" ;;
+        opt_check) echo "8) Check updates (no update)" ;;
+        opt_settings) echo "9) Settings" ;;
+        opt_exit) echo "0) Exit" ;;
+        confirm) echo "Confirm? [y/N]" ;;
+        yes) echo "y" ;;
+        no) echo "N" ;;
+        done) echo "Done!" ;;
+        enter_continue) echo "Press Enter to continue..." ;;
+        input_ct_id) echo "Enter Container ID (e.g., 100):" ;;
+        input_service) echo "Enter service name (e.g., nginx):" ;;
+        input_cmd) echo "Enter update command:" ;;
+        input_id) echo "Enter Container ID to remove:" ;;
+        added) echo "Added:" ;;
+        removed) echo "Removed:" ;;
+        no_log) echo "No log yet." ;;
+        log_title) echo "Recent log (last 30 lines)" ;;
+        host_updates) echo "packages to update" ;;
+        lxc_containers) echo "LXC Containers:" ;;
+        exit_msg) echo "Goodbye!" ;;
+        invalid) echo "Invalid selection!" ;;
+        # Settings
+        settings_title) echo "SETTINGS" ;;
+        settings_default) echo "1) Default setup (Quick)" ;;
+        settings_custom) echo "2) Custom setup" ;;
+        settings_later) echo "3) Setup later" ;;
+        # Service detection
+        detect_title) echo "SERVICE DETECTION" ;;
+        detect_auto) echo "1) Auto-detect all services" ;;
+        detect_manual) echo "2) Add manually" ;;
+        detect_later) echo "3) Setup later" ;;
+        detected) echo "Detected:" ;;
+        # Setup
+        setup_crontab) echo "Setting up Crontab (Monday 00:00)..." ;;
+        setup_done) echo "Setup complete!" ;;
+        *) echo "$1" ;;
+    esac
+}
+
+msg() {
+    if [[ "$CURRENT_LANG" == "vi" ]]; then
+        msg_vi "$1"
+    else
+        msg_en "$1"
+    fi
+}
+
+# ============================================================
+# CONFIG
+# ============================================================
+
+load_config() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        source "$CONFIG_FILE"
+    fi
+    AUTO_DETECT=${AUTO_DETECT:-"true"}
+    AUTO_CRONTAB=${AUTO_CRONTAB:-"true"}
+    AUTO_UPDATE_HOST=${AUTO_UPDATE_HOST:-"true"}
+    AUTO_UPDATE_LXC=${AUTO_UPDATE_LXC:-"true"}
+}
+
+save_config() {
+    cat > "$CONFIG_FILE" << CONF
+# Smart Update Config
+AUTO_DETECT=${AUTO_DETECT}
+AUTO_CRONTAB=${AUTO_CRONTAB}
+AUTO_UPDATE_HOST=${AUTO_UPDATE_HOST}
+AUTO_UPDATE_LXC=${AUTO_UPDATE_LXC}
+CONF
+}
+
+# ============================================================
+# PERMISSIONS
+# ============================================================
+
+ensure_permissions() {
+    if [[ -f "$SERVICES_FILE" ]]; then
+        chmod 600 "$SERVICES_FILE" 2>/dev/null || true
+    fi
+    if [[ -f "$CONFIG_FILE" ]]; then
+        chmod 600 "$CONFIG_FILE" 2>/dev/null || true
+    fi
+}
+
 validate_input() {
     local input="$1"
-    local name="$2"
-    # Only allow alphanumeric, dots, hyphens, underscores, slashes, pipes, spaces
-        if ! echo "$input" | grep -qE "^[a-zA-Z0-9._/| =]+$"; then
-        echo -e "${RED}[ERROR] Invalid characters in ${name}${NC}"
+    if ! echo "$input" | grep -qE "^[a-zA-Z0-9._/| =-]+$"; then
         return 1
     fi
     return 0
 }
 
-mkdir -p "$CONF_DIR"
-
-if [[ ! -f "$SERVICES_FILE" ]]; then
-    cat > "$SERVICES_FILE" << 'EOF'
-# Smart Update - Service Update Commands
-# Format: CONTAINER_ID|SERVICE_NAME|UPDATE_COMMAND
-EOF
-    chmod 600 "$SERVICES_FILE"
-fi
-
-ensure_permissions
+# ============================================================
+# LOGGING
+# ============================================================
 
 log() {
     local msg="[$(date '+%Y-%m-%d %H:%M:%S')] $1"
     echo -e "$msg" | tee -a "$LOG_FILE"
 }
 
-log_info() { log "${BLUE}[INFO]${NC} $1"; }
-log_ok() { log "${GREEN}[OK]${NC} $1"; }
-log_warn() { log "${YELLOW}[WARN]${NC} $1"; }
-log_error() { log "${RED}[ERROR]${NC} $1"; }
+log_info() { log "[INFO] $1"; }
+log_ok() { log "[OK] $1"; }
+log_warn() { log "[WARN] $1"; }
+log_error() { log "[ERROR] $1"; }
+
+# ============================================================
+# SERVICE MANAGEMENT
+# ============================================================
 
 cmd_list() {
-    echo -e "\n${CYAN}=== Service Update Entries ===${NC}"
+    echo -e "\n=== Service Update Entries ==="
     if [[ -f "$SERVICES_FILE" ]]; then
         local count=0
         while IFS='|' read -r ct_id service cmd; do
             [[ "$ct_id" =~ ^#.*$ || -z "$ct_id" ]] && continue
-            echo -e "  ${GREEN}CT ${ct_id}${NC} | ${GREEN}${service}${NC} | ${cmd}"
+            echo "  CT ${ct_id} | ${service} | ${cmd}"
             count=$((count + 1))
         done < "$SERVICES_FILE"
-        echo -e "\n${BLUE}Total: ${count} entries${NC}"
+        echo -e "\nTotal: ${count} entries"
     else
         echo "  No services.conf found"
     fi
@@ -98,17 +237,13 @@ cmd_add() {
         exit 1
     fi
 
-    # Security: Validate input
-    validate_input "$ct_id" "Container ID" || exit 1
-    validate_input "$service" "Service name" || exit 1
+    validate_input "$ct_id" || { echo "Invalid Container ID"; exit 1; }
+    validate_input "$service" || { echo "Invalid service name"; exit 1; }
 
-    if [[ -f "$SERVICES_FILE" ]]; then
-        sed -i "/^${ct_id}|${service}|/d" "$SERVICES_FILE"
-    fi
-
+    [[ -f "$SERVICES_FILE" ]] && sed -i "/^${ct_id}|${service}|/d" "$SERVICES_FILE"
     echo "${ct_id}|${service}|${cmd}" >> "$SERVICES_FILE"
     chmod 600 "$SERVICES_FILE"
-    echo -e "${GREEN}Added: CT ${ct_id} | ${service}${NC}"
+    echo "$(msg added) CT ${ct_id} | ${service}"
 }
 
 cmd_remove() {
@@ -122,9 +257,70 @@ cmd_remove() {
 
     if [[ -f "$SERVICES_FILE" ]]; then
         sed -i "/^${ct_id}|${service}|/d" "$SERVICES_FILE"
-        echo -e "${GREEN}Removed: CT ${ct_id} | ${service}${NC}"
+        echo "$(msg removed) CT ${ct_id} | ${service}"
     fi
 }
+
+# ============================================================
+# AUTO DETECT SERVICES
+# ============================================================
+
+detect_services() {
+    local count=0
+    echo "$(msg detect_title)"
+    echo ""
+
+    for container in $(pct list 2>/dev/null | awk '{if(NR>1) print $1}'); do
+        local name os
+        name=$(pct exec "$container" hostname 2>/dev/null || echo "unknown")
+        os=$(pct config "$container" 2>/dev/null | awk '/^ostype/ {print $2}')
+
+        echo "CT ${container} (${name}) [${os}]"
+
+        # Detect services
+        local services
+        services=$(pct exec "$container" -- systemctl list-units --type=service --state=running --no-pager 2>/dev/null | grep -v "getty\|journald\|Network\|dbus\|rsyslog\|systemd-logind\|crond\|networkd\|logind\|user@" | awk '{print $1}' | sed 's/.service//' || true)
+
+        for svc in $services; do
+            # Skip system services
+            [[ "$svc" =~ ^(ssh|postfix|cron|rsyslog)$ ]] && continue
+
+            # Check if already configured
+            if grep -q "^${container}|${svc}|" "$SERVICES_FILE" 2>/dev/null; then
+                echo "  - ${svc} (already configured)"
+                continue
+            fi
+
+            # Auto-generate update command based on OS
+            local update_cmd=""
+            case "$os" in
+                alma|centos|fedora|rocky)
+                    update_cmd="pct exec ${container} -- dnf update -y ${svc}"
+                    ;;
+                ubuntu|debian|devuan)
+                    update_cmd="pct exec ${container} -- apt update && apt upgrade -y ${svc}"
+                    ;;
+                alpine)
+                    update_cmd="pct exec ${container} -- apk update && apk upgrade ${svc}"
+                    ;;
+            esac
+
+            if [[ -n "$update_cmd" ]]; then
+                echo "  + ${svc} (NEW)"
+                echo "${container}|${svc}|${update_cmd}" >> "$SERVICES_FILE"
+                count=$((count + 1))
+            fi
+        done
+        echo ""
+    done
+
+    chmod 600 "$SERVICES_FILE" 2>/dev/null || true
+    echo "$(msg detected) ${count} services"
+}
+
+# ============================================================
+# UPDATE FUNCTIONS
+# ============================================================
 
 update_host() {
     log_info "=== Updating PVE Host ==="
@@ -136,45 +332,39 @@ update_host() {
     fi
     log_info "Host: ${updates} packages to update"
     if apt-get update -qq && apt-get upgrade -y -qq >> "$LOG_FILE" 2>&1; then
-        log_ok "Host: Update completed successfully"
-        TOTAL_HOST_UPDATES=$updates
+        log_ok "Host: Update completed"
     else
         log_error "Host: Update failed"
         return 1
     fi
-    if [[ -f /var/run/reboot-required ]]; then
-        REBOOT_REQUIRED=1
-        log_warn "Host: Reboot required (kernel update)"
-    fi
-    log_info "Host: Cleaning up..."
+    [[ -f /var/run/reboot-required ]] && log_warn "Host: Reboot required"
     apt-get autoremove -y -qq >> "$LOG_FILE" 2>&1 || true
     apt-get autoclean -qq >> "$LOG_FILE" 2>&1 || true
-    log_ok "Host: Cleanup completed"
 }
 
 update_container_os() {
     local container=$1
-    local name
+    local name os
     name=$(pct exec "$container" hostname 2>/dev/null || echo "unknown")
-    local os
     os=$(pct config "$container" | awk '/^ostype/ {print $2}')
-    log_info "CT ${container} (${name}): Updating OS packages..."
+    log_info "CT ${container} (${name}): Updating OS..."
+
     case "$os" in
     alpine) pct exec "$container" -- ash -c "apk update && apk upgrade" >> "$LOG_FILE" 2>&1 ;;
     archlinux) pct exec "$container" -- bash -c "pacman -Syyu --noconfirm" >> "$LOG_FILE" 2>&1 ;;
-    fedora | rocky | centos | alma) pct exec "$container" -- bash -c "dnf -y update && dnf -y upgrade" >> "$LOG_FILE" 2>&1 ;;
-    ubuntu | debian | devuan)
+    fedora|rocky|centos|alma) pct exec "$container" -- bash -c "dnf -y update && dnf -y upgrade" >> "$LOG_FILE" 2>&1 ;;
+    ubuntu|debian|devuan)
         pct exec "$container" -- bash -c "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confold' dist-upgrade -y" >> "$LOG_FILE" 2>&1
         pct exec "$container" -- bash -c "rm -rf /usr/lib/python3.*/EXTERNALLY-MANAGED" 2>/dev/null || true
         ;;
     opensuse) pct exec "$container" -- bash -c "zypper ref && zypper --non-interactive dup" >> "$LOG_FILE" 2>&1 ;;
-    *) log_warn "CT ${container}: Unknown OS '${os}', skipping"; return 1 ;;
+    *) log_warn "CT ${container}: Unknown OS '${os}'"; return 1 ;;
     esac
+
     case "$os" in
-    ubuntu | debian | devuan) pct exec "$container" -- bash -c "apt-get autoremove -y && apt-get autoclean" >> "$LOG_FILE" 2>&1 || true ;;
-    fedora | rocky | centos | alma) pct exec "$container" -- bash -c "dnf autoremove -y && dnf clean all" >> "$LOG_FILE" 2>&1 || true ;;
+    ubuntu|debian|devuan) pct exec "$container" -- bash -c "apt-get autoremove -y && apt-get autoclean" >> "$LOG_FILE" 2>&1 || true ;;
+    fedora|rocky|centos|alma) pct exec "$container" -- bash -c "dnf autoremove -y && dnf clean all" >> "$LOG_FILE" 2>&1 || true ;;
     esac
-    log_ok "CT ${container} (${name}): OS update completed"
 }
 
 update_container_services() {
@@ -185,12 +375,11 @@ update_container_services() {
     [[ -z "$entries" ]] && return 0
     while IFS='|' read -r ct_id service cmd; do
         if [[ "$ct_id" == "$container" ]]; then
-            log_info "CT ${container}: Updating service '${service}'..."
+            log_info "CT ${container}: Updating '${service}'..."
             if eval "$cmd" >> "$LOG_FILE" 2>&1; then
-                log_ok "CT ${container}: Service '${service}' updated"
-                TOTAL_SERVICE_UPDATES=$((TOTAL_SERVICE_UPDATES + 1))
+                log_ok "CT ${container}: '${service}' updated"
             else
-                log_error "CT ${container}: Service '${service}' update failed"
+                log_error "CT ${container}: '${service}' update failed"
             fi
         fi
     done <<< "$entries"
@@ -201,50 +390,134 @@ update_container() {
     local name
     name=$(pct exec "$container" hostname 2>/dev/null || echo "unknown")
     log_info "=== CT ${container} (${name}) ==="
+
     if pct config "$container" 2>/dev/null | grep -q "^template:"; then
         log_warn "CT ${container}: Skipping template"
-        TOTAL_CT_SKIPPED=$((TOTAL_CT_SKIPPED + 1))
         return 0
     fi
+
     local status
     status=$(pct status "$container" 2>/dev/null || echo "status: unknown")
     if [[ "$status" == "status: stopped" ]]; then
-        log_info "CT ${container}: Starting container..."
+        log_info "CT ${container}: Starting..."
         pct start "$container" >> "$LOG_FILE" 2>&1
         sleep 5
     fi
-    if update_container_os "$container"; then
-        TOTAL_CT_UPDATED=$((TOTAL_CT_UPDATED + 1))
-    else
-        TOTAL_CT_ERRORS=$((TOTAL_CT_ERRORS + 1))
-    fi
+
+    update_container_os "$container" || true
     update_container_services "$container"
-    log_ok "CT ${container}: Done"
 }
+
+# ============================================================
+# SETTINGS MENU
+# ============================================================
+
+show_settings() {
+    while true; do
+        clear
+        echo "============================================"
+        echo "  $(msg settings_title)"
+        echo "============================================"
+        echo ""
+        echo "  1) $(msg settings_default)"
+        echo "  2) $(msg settings_custom)"
+        echo "  3) $(msg settings_later)"
+        echo ""
+        echo "============================================"
+        read -p "  Chon [1-3]: " choice
+
+        case "$choice" in
+            1)
+                AUTO_DETECT="true"
+                AUTO_CRONTAB="true"
+                AUTO_UPDATE_HOST="true"
+                AUTO_UPDATE_LXC="true"
+                save_config
+
+                # Setup crontab
+                echo "$(msg setup_crontab)"
+                if ! crontab -l 2>/dev/null | grep -q "smart-update"; then
+                    (crontab -l 2>/dev/null; echo "0 0 * * 1 /usr/local/bin/smart-update >>/var/log/smart-update.log 2>&1") | crontab -
+                fi
+
+                # Auto detect services
+                detect_services
+
+                echo ""
+                echo "$(msg setup_done)"
+                read -p "$(msg enter_continue)"
+                return
+                ;;
+            2)
+                # Custom settings
+                echo ""
+                read -p "Auto-detect services? (y/N): " ans
+                AUTO_DETECT=$([[ "$ans" == "y" || "$ans" == "Y" ]] && echo "true" || echo "false")
+
+                read -p "Setup crontab (Monday 00:00)? (y/N): " ans
+                AUTO_CRONTAB=$([[ "$ans" == "y" || "$ans" == "Y" ]] && echo "true" || echo "false")
+
+                read -p "Auto-update Host? (y/N): " ans
+                AUTO_UPDATE_HOST=$([[ "$ans" == "y" || "$ans" == "Y" ]] && echo "true" || echo "false")
+
+                read -p "Auto-update LXC? (y/N): " ans
+                AUTO_UPDATE_LXC=$([[ "$ans" == "y" || "$ans" == "Y" ]] && echo "true" || echo "false")
+
+                save_config
+
+                # Setup crontab if enabled
+                if [[ "$AUTO_CRONTAB" == "true" ]]; then
+                    echo "$(msg setup_crontab)"
+                    if ! crontab -l 2>/dev/null | grep -q "smart-update"; then
+                        (crontab -l 2>/dev/null; echo "0 0 * * 1 /usr/local/bin/smart-update >>/var/log/smart-update.log 2>&1") | crontab -
+                    fi
+                fi
+
+                # Auto detect if enabled
+                if [[ "$AUTO_DETECT" == "true" ]]; then
+                    detect_services
+                fi
+
+                echo ""
+                echo "$(msg setup_done)"
+                read -p "$(msg enter_continue)"
+                return
+                ;;
+            3)
+                return
+                ;;
+        esac
+    done
+}
+
+# ============================================================
+# MAIN MENU
+# ============================================================
 
 show_menu() {
     while true; do
         clear
-        echo -e "${BOLD}${CYAN}============================================${NC}"
-        echo -e "${BOLD}${CYAN}     SMART UPDATE MANAGER v${VERSION}${NC}"
-        echo -e "${BOLD}${CYAN}============================================${NC}"
+        echo "============================================"
+        echo "  $(msg title) v${VERSION}"
+        echo "============================================"
         echo ""
-        echo -e "  ${GREEN}1${NC}) Cap nhat toan bo (Host + Tat ca LXC)"
-        echo -e "  ${GREEN}2${NC}) Chi cap nhat Host"
-        echo -e "  ${GREEN}3${NC}) Chi cap nhat LXC containers"
-        echo -e "  ${GREEN}4${NC}) Xem danh sach services"
-        echo -e "  ${GREEN}5${NC}) Them service update"
-        echo -e "  ${GREEN}6${NC}) Xoa service update"
-        echo -e "  ${GREEN}7${NC}) Xem log gan nhat"
-        echo -e "  ${GREEN}8${NC}) Kiem tra updates (khong cap nhat)"
-        echo -e "  ${RED}9${NC}) Thoat"
+        echo "  $(msg opt_full)"
+        echo "  $(msg opt_host)"
+        echo "  $(msg opt_lxc)"
+        echo "  $(msg opt_services)"
+        echo "  $(msg opt_add)"
+        echo "  $(msg opt_remove)"
+        echo "  $(msg opt_log)"
+        echo "  $(msg opt_check)"
+        echo "  $(msg opt_settings)"
+        echo "  $(msg opt_exit)"
         echo ""
-        echo -e "${BOLD}${CYAN}============================================${NC}"
-        read -p "  Chon [1-9]: " choice
+        echo "============================================"
+        read -p "  Chon [0-9]: " choice
 
         case "$choice" in
             1)
-                echo -e "\n${YELLOW}Cap nhat TOAN BO Host + LXC? [y/N]${NC}"
+                echo -e "\n$(msg confirm)"
                 read -p "  " confirm
                 if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
                     log "=========================================="
@@ -257,12 +530,12 @@ show_menu() {
                     log "=========================================="
                     log "Smart Update Completed"
                     log "=========================================="
-                    echo -e "\n${GREEN}Hoan thanh! Xem log: ${LOG_FILE}${NC}"
-                    read -p "  Nhan Enter de tiep tuc..."
+                    echo -e "\n$(msg done)"
+                    read -p "$(msg enter_continue)"
                 fi
                 ;;
             2)
-                echo -e "\n${YELLOW}Cap nhat Host? [y/N]${NC}"
+                echo -e "\n$(msg confirm)"
                 read -p "  " confirm
                 if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
                     log "=========================================="
@@ -272,12 +545,12 @@ show_menu() {
                     log "=========================================="
                     log "Host Update Completed"
                     log "=========================================="
-                    echo -e "\n${GREEN}Hoan thanh!${NC}"
-                    read -p "  Nhan Enter de tiep tuc..."
+                    echo -e "\n$(msg done)"
+                    read -p "$(msg enter_continue)"
                 fi
                 ;;
             3)
-                echo -e "\n${YELLOW}Cap nhat tat ca LXC containers? [y/N]${NC}"
+                echo -e "\n$(msg confirm)"
                 read -p "  " confirm
                 if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
                     log "=========================================="
@@ -289,91 +562,161 @@ show_menu() {
                     log "=========================================="
                     log "LXC Update Completed"
                     log "=========================================="
-                    echo -e "\n${GREEN}Hoan thanh!${NC}"
-                    read -p "  Nhan Enter de tiep tuc..."
+                    echo -e "\n$(msg done)"
+                    read -p "$(msg enter_continue)"
                 fi
                 ;;
             4)
-                echo -e "\n${CYAN}=== Danh sach Services ===${NC}"
                 cmd_list
-                read -p "  Nhan Enter de tiep tuc..."
+                read -p "$(msg enter_continue)"
                 ;;
             5)
                 echo ""
-                read -p "  Nhap Container ID (VD: 100): " ct_id
+                read -p "$(msg input_ct_id) " ct_id
                 [[ -z "$ct_id" ]] && continue
-                read -p "  Nhap ten service (VD: nginx): " service
+                read -p "$(msg input_service) " service
                 [[ -z "$service" ]] && continue
-                read -p "  Nhap lenh update: " cmd
+                read -p "$(msg input_cmd) " cmd
                 [[ -z "$cmd" ]] && continue
                 cmd_add "$ct_id" "$service" "$cmd"
-                read -p "  Nhan Enter de tiep tuc..."
+                read -p "$(msg enter_continue)"
                 ;;
             6)
                 echo ""
-                read -p "  Nhap Container ID can xoa: " ct_id
+                read -p "$(msg input_id) " ct_id
                 [[ -z "$ct_id" ]] && continue
-                read -p "  Nhap ten service can xoa: " service
+                read -p "$(msg input_service) " service
                 [[ -z "$service" ]] && continue
                 cmd_remove "$ct_id" "$service"
-                read -p "  Nhan Enter de tiep tuc..."
+                read -p "$(msg enter_continue)"
                 ;;
             7)
-                echo -e "\n${CYAN}=== Log gan nhat (30 dong cuoi) ===${NC}"
+                echo -e "\n=== $(msg log_title) ==="
                 if [[ -f "$LOG_FILE" ]]; then
                     tail -30 "$LOG_FILE"
                 else
-                    echo "  Chua co log."
+                    echo "  $(msg no_log)"
                 fi
-                read -p "  Nhan Enter de tiep tuc..."
+                read -p "$(msg enter_continue)"
                 ;;
             8)
-                echo -e "\n${CYAN}=== Kiem tra Updates ===${NC}"
+                echo -e "\n=== Check Updates ==="
+                local host_updates
                 host_updates=$(apt list --upgradable 2>/dev/null | grep -c "upgradable" || true)
-                echo -e "  ${GREEN}HOST${NC}: ${host_updates} packages can update"
+                echo "  HOST: ${host_updates} $(msg host_updates)"
                 echo ""
-                echo -e "  ${GREEN}LXC Containers:${NC}"
+                echo "  $(msg lxc_containers)"
                 for container in $(pct list | awk '{if(NR>1) print $1}'); do
+                    local name os
                     name=$(pct exec "$container" hostname 2>/dev/null || echo "unknown")
                     os=$(pct config "$container" | awk '/^ostype/ {print $2}')
                     echo "    CT ${container} (${name}) [${os}]"
                 done
-                read -p "  Nhan Enter de tiep tuc..."
+                read -p "$(msg enter_continue)"
                 ;;
             9)
-                echo -e "\n${GREEN}Tam biet!${NC}"
+                show_settings
+                ;;
+            0)
+                echo -e "\n$(msg exit_msg)"
                 exit 0
                 ;;
             *)
-                echo -e "\n${RED}Lua chon khong hop le!${NC}"
+                echo -e "\n$(msg invalid)"
                 sleep 1
                 ;;
         esac
     done
 }
 
+# ============================================================
+# FIRST RUN
+# ============================================================
+
+first_run() {
+    if [[ -f "$FIRST_RUN" ]]; then
+        return 0
+    fi
+
+    clear
+    echo "============================================"
+    echo "  $(msg welcome)"
+    echo "============================================"
+    echo ""
+    echo "  $(msg select_lang)"
+    echo ""
+    echo "  $(msg lang_vi)"
+    echo "  $(msg lang_en)"
+    echo ""
+    echo "============================================"
+    read -p "  Chon [1-2]: " lang_choice
+
+    case "$lang_choice" in
+        1) save_language "vi" ;;
+        2) save_language "en" ;;
+        *) save_language "vi" ;;
+    esac
+
+    # Setup config
+    mkdir -p "$CONF_DIR"
+
+    # First run setup
+    show_settings
+
+    # Mark first run complete
+    touch "$FIRST_RUN"
+}
+
+# ============================================================
+# INIT
+# ============================================================
+
+mkdir -p "$CONF_DIR"
+load_language
+load_config
+ensure_permissions
+
+# Initialize services.conf
+if [[ ! -f "$SERVICES_FILE" ]]; then
+    cat > "$SERVICES_FILE" << 'CONF'
+# Smart Update - Service Update Commands
+# Format: CONTAINER_ID|SERVICE_NAME|UPDATE_COMMAND
+CONF
+    chmod 600 "$SERVICES_FILE"
+fi
+
+# ============================================================
+# MAIN
+# ============================================================
+
 case "${1:-}" in
     --version|-v) echo "smart-update v${VERSION}"; exit 0 ;;
-    --list|-l) cmd_list; exit 0 ;;
-    --add|-a) cmd_add "${2:-}" "${3:-}" "${4:-}"; exit 0 ;;
-    --remove|-r) cmd_remove "${2:-}" "${3:-}"; exit 0 ;;
+    --list|-l) load_language; cmd_list; exit 0 ;;
+    --add|-a) load_language; cmd_add "${2:-}" "${3:-}" "${4:-}"; exit 0 ;;
+    --remove|-r) load_language; cmd_remove "${2:-}" "${3:-}"; exit 0 ;;
+    --detect) load_language; detect_services; exit 0 ;;
+    --lang) save_language "${2:-vi}"; echo "Language set to: ${2:-vi}"; exit 0 ;;
     --help|-h)
         echo "Smart Update Manager v${VERSION}"
         echo ""
         echo "Usage: smart-update [OPTIONS]"
         echo ""
         echo "Options:"
-        echo "  (none)          Hien menu interactive"
-        echo "  --version, -v   Hien version"
-        echo "  --list, -l      List all service update entries"
-        echo "  --add, -a       Add service update command"
-        echo "  --remove, -r    Remove service update command"
-        echo "  --help, -h      Show this help"
+        echo "  (none)          Interactive menu"
+        echo "  --version, -v   Show version"
+        echo "  --list, -l      List services"
+        echo "  --add, -a       Add service"
+        echo "  --remove, -r    Remove service"
+        echo "  --detect        Auto-detect services"
+        echo "  --lang [vi|en]  Set language"
+        echo "  --help, -h      Show help"
         exit 0
         ;;
 esac
 
+# First run check
 if [[ $# -eq 0 ]]; then
+    first_run
     show_menu
     exit 0
 fi
