@@ -1,33 +1,33 @@
-# Security Policy
+# Chính sách Bảo mật
 
-## Vulnerabilities
+## Lỗ hổng
 
-Report security issues responsibly.
+Báo cáo lỗ hổng bảo mật một cách có trách nhiệm.
 
-## Security Considerations
+## Các lưu ý Bảo mật
 
-### Script Execution
-- Script runs as root (required for pct commands)
-- Config files have restricted permissions (600)
+### Thực thi Script
+- Script chạy với quyền root (cần cho pct commands)
+- Các file config có quyền hạn chế (600)
 
-### eval Command Usage
-- Used for service update commands
-- Only trusted commands should be in services.conf
-- Input validation on --add command
+### Sử dụng eval
+- Dùng cho service update commands
+- Chỉ thêm lệnh đáng tin cậy vào services.conf
+- Validate input trước khi thêm
 
-### Language & Config Files
-- Language preference stored in /etc/smart-update/language
-- Config stored in /etc/smart-update/config
-- Both have restricted permissions
+### File Language & Config
+- Ngôn ngữ lưu tại /etc/smart-update/language
+- Config lưu tại /etc/smart-update/config
+- Cả hai có quyền hạn chế
 
 ### Logging
-- Commands logged to /var/log/smart-update.log
-- Do not store sensitive data in update commands
+- Lệnh được ghi log tại /var/log/smart-update.log
+- Không lưu thông tin nhạy cảm trong lệnh update
 
-## Best Practices
+## Thực hành tốt nhất
 
-1. Review services.conf before running
-2. Test on non-production systems first
-3. Backup containers before major updates
-4. Use --list to verify configuration
-5. Use setup wizard for initial configuration
+1. Kiểm tra services.conf trước khi chạy
+2. Test trên hệ thống không phải production
+3. Backup containers trước khi update lớn
+4. Dùng --list để kiểm tra cấu hình
+5. Dùng setup wizard khi cài đặt lần đầu

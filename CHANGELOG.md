@@ -1,26 +1,26 @@
-# Changelog
+# Lịch sử thay đổi
 
 ## [3.0.0] - 2026-07-19
 
-### Added
-- Health check (CPU, Memory, Disk, LXC status)
-- Backup LXC containers before update
-- Dry run mode (preview without updating)
-- Auto-update script from GitHub
-- Docker/Podman container auto-pull
+### Thêm mới
+- Kiểm tra sức khỏe (CPU, RAM, Disk, trạng thái LXC)
+- Sao lưu LXC containers trước khi update
+- Chạy thử (xem trước, không update thực)
+- Tự cập nhật script từ GitHub
+- Tự động pull image Docker/Podman
 
-### Improved
-- Better menu with more options
-- Config includes AUTO_BACKUP and AUTO_HEALTH
+### Cải thiện
+- Menu với nhiều tùy chọn hơn
+- Config bao gồm AUTO_BACKUP và AUTO_HEALTH
 
 ## [2.0.0] - 2026-07-19
 
-### Added
-- Multi-language support (vi/en)
-- First-run setup wizard
-- Auto-detect services
+### Thêm mới
+- Hỗ trợ đa ngôn ngữ (Tiếng Việt / English)
+- Setup Wizard khi chạy lần đầu
+- Tự động phát hiện dịch vụ
 
 ## [1.0.0] - 2026-07-19
 
-### Added
-- Initial release
+### Thêm mới
+- Phiên bản đầu tiên

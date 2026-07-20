@@ -31,30 +31,30 @@ save_language() { echo "$1" > "$LANG_FILE"; CURRENT_LANG="$1"; }
 
 msg_vi() {
     case "$1" in
-        title) echo "QUAN LY CAP NHAT THONG MINH v${VERSION}" ;;
-        welcome) echo "Chao mung den voi Smart Update Manager!" ;;
-        select_lang) echo "Chon ngon ngu / Select language:" ;;
-        lang_vi) echo "1) Tieng Viet" ;;
+        title) echo "QUẢN LÝ CẬP NHẬT THÔNG MINH v${VERSION}" ;;
+        welcome) echo "Chào mừng đến với Smart Update Manager!" ;;
+        select_lang) echo "Chọn ngôn ngữ / Select language:" ;;
+        lang_vi) echo "1) Tiếng Việt" ;;
         lang_en) echo "2) English" ;;
-        opt_full) echo "1) Cap nhat toan bo (Host + LXC)" ;;
-        opt_host) echo "2) Chi cap nhat Host" ;;
-        opt_lxc) echo "3) Chi cap nhat LXC containers" ;;
-        opt_services) echo "4) Xem services" ;;
-        opt_add) echo "5) Them service" ;;
-        opt_remove) echo "6) Xoa service" ;;
-        opt_health) echo "7) Kiem tra suc khoe he thong" ;;
-        opt_backup) echo "8) Backup truoc khi update" ;;
-        opt_dryrun) echo "9) Chay thu (khong update thuc)" ;;
+        opt_full) echo "1) Cập nhật toàn bộ (Host + LXC)" ;;
+        opt_host) echo "2) Chỉ cập nhật Host" ;;
+        opt_lxc) echo "3) Chỉ cập nhật LXC containers" ;;
+        opt_services) echo "4) Xem dịch vụ" ;;
+        opt_add) echo "5) Thêm dịch vụ" ;;
+        opt_remove) echo "6) Xóa dịch vụ" ;;
+        opt_health) echo "7) Kiểm tra sức khỏe hệ thống" ;;
+        opt_backup) echo "8) Sao lưu trước khi update" ;;
+        opt_dryrun) echo "9) Chạy thử (không update thực)" ;;
         opt_log) echo "10) Xem log" ;;
-        opt_check) echo "11) Kiem tra updates" ;;
-        opt_update_script) echo "12) Cap nhat script tu GitHub" ;;
-        opt_settings) echo "13) Cai dat" ;;
-        opt_exit) echo "0) Thoat" ;;
-        confirm) echo "Xac nhan? [y/N]" ;;
-        done) echo "Hoan thanh!" ;;
-        enter_continue) echo "Nhan Enter de tiep tuc..." ;;
+        opt_check) echo "11) Kiểm tra updates" ;;
+        opt_update_script) echo "12) Cập nhật script từ GitHub" ;;
+        opt_settings) echo "13) Thiết lập" ;;
+        opt_exit) echo "0) Thoát" ;;
+        confirm) echo "Xác nhận? [y/N]" ;;
+        done) echo "Hoàn thành!" ;;
+        enter_continue) echo "Nhấn Enter để tiếp tục..." ;;
         # Health check
-        health_title) echo "KIEM TRA SUC KHOE HE THONG" ;;
+        health_title) echo "KIỂM TRA SỨC KHỎE HỆ THỐNG" ;;
         health_host) echo "Host Status:" ;;
         health_cpu) echo "  CPU Load:" ;;
         health_mem) echo "  Memory:" ;;
@@ -64,22 +64,22 @@ msg_vi() {
         health_status_crit) echo "  [CRIT]" ;;
         # Backup
         backup_title) echo "BACKUP LXC CONTAINERS" ;;
-        backup_create) echo "Dang backup..." ;;
-        backup_done) echo "Backup hoan thanh:" ;;
-        backup_list) echo "Danh sach backup:" ;;
+        backup_create) echo "Đang backup..." ;;
+        backup_done) echo "Backup hoàn thành:" ;;
+        backup_list) echo "Danh sách backup:" ;;
         # Dry run
-        dryrun_title) echo "CHAY THU - KHONG UPDATE THUC" ;;
-        dryrun_will) echo "Se update:" ;;
-        dryrun_skip) echo "Bo qua:" ;;
+        dryrun_title) echo "CHẠY THỬ - KHÔNG UPDATE THỰC" ;;
+        dryrun_will) echo "Se cập nhật:" ;;
+        dryrun_skip) echo "Bỏ qua:" ;;
         # Script update
-        update_script_title) echo "CAP NHAT SCRIPT TU GITHUB" ;;
-        update_script_current) echo "Version hien tai:" ;;
-        update_script_latest) echo "Version moi nhat:" ;;
-        update_script_need) echo "Can cap nhat!" ;;
-        update_script_ok) echo "Da moi nhat!" ;;
-        update_script_done) echo "Da cap nhat thanh cong!" ;;
-        exit_msg) echo "Tam biet!" ;;
-        invalid) echo "Lua chon khong hop le!" ;;
+        update_script_title) echo "CẬP NHẬT SCRIPT TỪ GITHUB" ;;
+        update_script_current) echo "Phiên bản hiện tại:" ;;
+        update_script_latest) echo "Phiên bản mới nhất:" ;;
+        update_script_need) echo "Cần cập nhật!!" ;;
+        update_script_ok) echo "Đã mới nhất!!" ;;
+        update_script_done) echo "Đã cập nhật thành công!!" ;;
+        exit_msg) echo "Tạm biệt!" ;;
+        invalid) echo "Lựa chọn không hợp lệ!!" ;;
         *) echo "$1" ;;
     esac
 }
@@ -89,7 +89,7 @@ msg_en() {
         title) echo "SMART UPDATE MANAGER v${VERSION}" ;;
         welcome) echo "Welcome to Smart Update Manager!" ;;
         select_lang) echo "Select language:" ;;
-        lang_vi) echo "1) Tieng Viet" ;;
+        lang_vi) echo "1) Tiếng Việt" ;;
         lang_en) echo "2) English" ;;
         opt_full) echo "1) Update all (Host + LXC)" ;;
         opt_host) echo "2) Update Host only" ;;
