@@ -1,35 +1,26 @@
 # Changelog
 
+## [3.0.0] - 2026-07-19
+
+### Added
+- Health check (CPU, Memory, Disk, LXC status)
+- Backup LXC containers before update
+- Dry run mode (preview without updating)
+- Auto-update script from GitHub
+- Docker/Podman container auto-pull
+
+### Improved
+- Better menu with more options
+- Config includes AUTO_BACKUP and AUTO_HEALTH
+
 ## [2.0.0] - 2026-07-19
 
 ### Added
-- Multi-language support (Tieng Viet / English)
+- Multi-language support (vi/en)
 - First-run setup wizard
-- Auto-detect services in LXC containers
-- Settings menu (Default/Custom/Later)
-- Config file system
-- `--lang` command to switch language
-- `--detect` command for auto service detection
-
-### Improved
-- Better user experience with guided setup
-- Cleaner menu structure
-- Configurable options
+- Auto-detect services
 
 ## [1.0.0] - 2026-07-19
 
 ### Added
-- Interactive text-based menu
-- Auto-scan all LXC containers
-- Host OS update
-- LXC OS update (Debian, Ubuntu, CentOS, AlmaLinux, Alpine, openSUSE)
-- Service-specific updates via config file
-- CLI commands: --list, --add, --remove, --help
-- Logging to /var/log/smart-update.log
-- Exclude list support
-- Cleanup after update
-
-### Security
-- Sanitized eval command usage
-- Config file permissions check
-- No secrets in logs
+- Initial release

@@ -1,321 +1,452 @@
 #!/usr/bin/env bash
 
 # Smart Update Manager for Proxmox VE
-# Version: 2.0.0
+# Version: 3.0.0
 # License: MIT
 
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-VERSION="2.0.0"
+VERSION="3.0.0"
+GITHUB_REPO="viettien2008/smart-update"
+GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_REPO}/main"
 CONF_DIR="/etc/smart-update"
 CONFIG_FILE="${CONF_DIR}/config"
 EXCLUDE_FILE="/etc/update-lxcs.conf"
 SERVICES_FILE="${CONF_DIR}/services.conf"
 LOG_FILE="/var/log/smart-update.log"
 FIRST_RUN="${CONF_DIR}/.first_run"
+BACKUP_DIR="${CONF_DIR}/backups"
+LANG_FILE="${CONF_DIR}/language"
+DRY_RUN=false
 
 # ============================================================
 # LANGUAGE SYSTEM
 # ============================================================
 
-LANG_FILE="${CONF_DIR}/language"
-
 load_language() {
-    if [[ -f "$LANG_FILE" ]]; then
-        CURRENT_LANG=$(cat "$LANG_FILE")
-    else
-        CURRENT_LANG="vi"
-    fi
+    [[ -f "$LANG_FILE" ]] && CURRENT_LANG=$(cat "$LANG_FILE") || CURRENT_LANG="vi"
 }
 
-save_language() {
-    echo "$1" > "$LANG_FILE"
-    CURRENT_LANG="$1"
-}
+save_language() { echo "$1" > "$LANG_FILE"; CURRENT_LANG="$1"; }
 
-# Vietnamese
 msg_vi() {
     case "$1" in
-        title) echo "QUAN LY CAP NHAT THONG MINH" ;;
+        title) echo "QUAN LY CAP NHAT THONG MINH v${VERSION}" ;;
         welcome) echo "Chao mung den voi Smart Update Manager!" ;;
         select_lang) echo "Chon ngon ngu / Select language:" ;;
         lang_vi) echo "1) Tieng Viet" ;;
         lang_en) echo "2) English" ;;
-        select_action) echo "Chon thuc hien:" ;;
-        opt_full) echo "1) Cap nhat toan bo (Host + Tat ca LXC)" ;;
+        opt_full) echo "1) Cap nhat toan bo (Host + LXC)" ;;
         opt_host) echo "2) Chi cap nhat Host" ;;
         opt_lxc) echo "3) Chi cap nhat LXC containers" ;;
-        opt_services) echo "4) Xem danh sach services" ;;
-        opt_add) echo "5) Them service update" ;;
-        opt_remove) echo "6) Xoa service update" ;;
-        opt_log) echo "7) Xem log gan nhat" ;;
-        opt_check) echo "8) Kiem tra updates (khong cap nhat)" ;;
-        opt_settings) echo "9) Cai dat" ;;
+        opt_services) echo "4) Xem services" ;;
+        opt_add) echo "5) Them service" ;;
+        opt_remove) echo "6) Xoa service" ;;
+        opt_health) echo "7) Kiem tra suc khoe he thong" ;;
+        opt_backup) echo "8) Backup truoc khi update" ;;
+        opt_dryrun) echo "9) Chay thu (khong update thuc)" ;;
+        opt_log) echo "10) Xem log" ;;
+        opt_check) echo "11) Kiem tra updates" ;;
+        opt_update_script) echo "12) Cap nhat script tu GitHub" ;;
+        opt_settings) echo "13) Cai dat" ;;
         opt_exit) echo "0) Thoat" ;;
         confirm) echo "Xac nhan? [y/N]" ;;
-        yes) echo "y" ;;
-        no) echo "N" ;;
         done) echo "Hoan thanh!" ;;
         enter_continue) echo "Nhan Enter de tiep tuc..." ;;
-        input_ct_id) echo "Nhap Container ID (VD: 100):" ;;
-        input_service) echo "Nhap ten service (VD: nginx):" ;;
-        input_cmd) echo "Nhap lenh update:" ;;
-        input_id) echo "Nhap Container ID can xoa:" ;;
-        added) echo "Da them:" ;;
-        removed) echo "Da xoa:" ;;
-        no_log) echo "Chua co log." ;;
-        log_title) echo "Log gan nhat (30 dong cuoi)" ;;
-        host_updates) echo "packages can update" ;;
-        lxc_containers) echo "LXC Containers:" ;;
+        # Health check
+        health_title) echo "KIEM TRA SUC KHOE HE THONG" ;;
+        health_host) echo "Host Status:" ;;
+        health_cpu) echo "  CPU Load:" ;;
+        health_mem) echo "  Memory:" ;;
+        health_disk) echo "  Disk:" ;;
+        health_status_ok) echo "  [OK]" ;;
+        health_status_warn) echo "  [WARN]" ;;
+        health_status_crit) echo "  [CRIT]" ;;
+        # Backup
+        backup_title) echo "BACKUP LXC CONTAINERS" ;;
+        backup_create) echo "Dang backup..." ;;
+        backup_done) echo "Backup hoan thanh:" ;;
+        backup_list) echo "Danh sach backup:" ;;
+        # Dry run
+        dryrun_title) echo "CHAY THU - KHONG UPDATE THUC" ;;
+        dryrun_will) echo "Se update:" ;;
+        dryrun_skip) echo "Bo qua:" ;;
+        # Script update
+        update_script_title) echo "CAP NHAT SCRIPT TU GITHUB" ;;
+        update_script_current) echo "Version hien tai:" ;;
+        update_script_latest) echo "Version moi nhat:" ;;
+        update_script_need) echo "Can cap nhat!" ;;
+        update_script_ok) echo "Da moi nhat!" ;;
+        update_script_done) echo "Da cap nhat thanh cong!" ;;
         exit_msg) echo "Tam biet!" ;;
         invalid) echo "Lua chon khong hop le!" ;;
-        # Settings
-        settings_title) echo "CAI DAT" ;;
-        settings_default) echo "1) Cai dat mac dinh (Khoa dong)" ;;
-        settings_custom) echo "2) Cai dat tuy chinh" ;;
-        settings_later) echo "3) Cai dat sau" ;;
-        # Service detection
-        detect_title) echo "PHAT HIEN DICH VU" ;;
-        detect_auto) echo "1) Tu dong phat hien tat ca dich vu" ;;
-        detect_manual) echo "2) Them thu cong" ;;
-        detect_later) echo "3) Cai dat sau" ;;
-        detected) echo "Da phat hien:" ;;
-        # Setup
-        setup_crontab) echo "Thiet lap Crontab (00:00 Thu Hai)..." ;;
-        setup_done) echo "Cai dat hoan thanh!" ;;
         *) echo "$1" ;;
     esac
 }
 
-# English
 msg_en() {
     case "$1" in
-        title) echo "SMART UPDATE MANAGER" ;;
+        title) echo "SMART UPDATE MANAGER v${VERSION}" ;;
         welcome) echo "Welcome to Smart Update Manager!" ;;
         select_lang) echo "Select language:" ;;
         lang_vi) echo "1) Tieng Viet" ;;
         lang_en) echo "2) English" ;;
-        select_action) echo "Select action:" ;;
-        opt_full) echo "1) Update all (Host + All LXC)" ;;
+        opt_full) echo "1) Update all (Host + LXC)" ;;
         opt_host) echo "2) Update Host only" ;;
         opt_lxc) echo "3) Update LXC containers only" ;;
-        opt_services) echo "4) View services list" ;;
-        opt_add) echo "5) Add service update" ;;
-        opt_remove) echo "6) Remove service update" ;;
-        opt_log) echo "7) View recent log" ;;
-        opt_check) echo "8) Check updates (no update)" ;;
-        opt_settings) echo "9) Settings" ;;
+        opt_services) echo "4) View services" ;;
+        opt_add) echo "5) Add service" ;;
+        opt_remove) echo "6) Remove service" ;;
+        opt_health) echo "7) System health check" ;;
+        opt_backup) echo "8) Backup before update" ;;
+        opt_dryrun) echo "9) Dry run (no actual update)" ;;
+        opt_log) echo "10) View log" ;;
+        opt_check) echo "11) Check for updates" ;;
+        opt_update_script) echo "12) Update script from GitHub" ;;
+        opt_settings) echo "13) Settings" ;;
         opt_exit) echo "0) Exit" ;;
         confirm) echo "Confirm? [y/N]" ;;
-        yes) echo "y" ;;
-        no) echo "N" ;;
         done) echo "Done!" ;;
         enter_continue) echo "Press Enter to continue..." ;;
-        input_ct_id) echo "Enter Container ID (e.g., 100):" ;;
-        input_service) echo "Enter service name (e.g., nginx):" ;;
-        input_cmd) echo "Enter update command:" ;;
-        input_id) echo "Enter Container ID to remove:" ;;
-        added) echo "Added:" ;;
-        removed) echo "Removed:" ;;
-        no_log) echo "No log yet." ;;
-        log_title) echo "Recent log (last 30 lines)" ;;
-        host_updates) echo "packages to update" ;;
-        lxc_containers) echo "LXC Containers:" ;;
+        health_title) echo "SYSTEM HEALTH CHECK" ;;
+        health_host) echo "Host Status:" ;;
+        health_cpu) echo "  CPU Load:" ;;
+        health_mem) echo "  Memory:" ;;
+        health_disk) echo "  Disk:" ;;
+        health_status_ok) echo "  [OK]" ;;
+        health_status_warn) echo "  [WARN]" ;;
+        health_status_crit) echo "  [CRIT]" ;;
+        backup_title) echo "BACKUP LXC CONTAINERS" ;;
+        backup_create) echo "Creating backup..." ;;
+        backup_done) echo "Backup complete:" ;;
+        backup_list) echo "Backup list:" ;;
+        dryrun_title) echo "DRY RUN - NO ACTUAL UPDATE" ;;
+        dryrun_will) echo "Will update:" ;;
+        dryrun_skip) echo "Skip:" ;;
+        update_script_title) echo "UPDATE SCRIPT FROM GITHUB" ;;
+        update_script_current) echo "Current version:" ;;
+        update_script_latest) echo "Latest version:" ;;
+        update_script_need) echo "Update available!" ;;
+        update_script_ok) echo "Already up to date!" ;;
+        update_script_done) echo "Update complete!" ;;
         exit_msg) echo "Goodbye!" ;;
         invalid) echo "Invalid selection!" ;;
-        # Settings
-        settings_title) echo "SETTINGS" ;;
-        settings_default) echo "1) Default setup (Quick)" ;;
-        settings_custom) echo "2) Custom setup" ;;
-        settings_later) echo "3) Setup later" ;;
-        # Service detection
-        detect_title) echo "SERVICE DETECTION" ;;
-        detect_auto) echo "1) Auto-detect all services" ;;
-        detect_manual) echo "2) Add manually" ;;
-        detect_later) echo "3) Setup later" ;;
-        detected) echo "Detected:" ;;
-        # Setup
-        setup_crontab) echo "Setting up Crontab (Monday 00:00)..." ;;
-        setup_done) echo "Setup complete!" ;;
         *) echo "$1" ;;
     esac
 }
 
-msg() {
-    if [[ "$CURRENT_LANG" == "vi" ]]; then
-        msg_vi "$1"
-    else
-        msg_en "$1"
-    fi
-}
+msg() { [[ "$CURRENT_LANG" == "vi" ]] && msg_vi "$1" || msg_en "$1"; }
 
 # ============================================================
 # CONFIG
 # ============================================================
 
 load_config() {
-    if [[ -f "$CONFIG_FILE" ]]; then
-        source "$CONFIG_FILE"
-    fi
+    [[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
     AUTO_DETECT=${AUTO_DETECT:-"true"}
     AUTO_CRONTAB=${AUTO_CRONTAB:-"true"}
     AUTO_UPDATE_HOST=${AUTO_UPDATE_HOST:-"true"}
     AUTO_UPDATE_LXC=${AUTO_UPDATE_LXC:-"true"}
+    AUTO_BACKUP=${AUTO_BACKUP:-"true"}
+    AUTO_HEALTH=${AUTO_HEALTH:-"true"}
 }
 
 save_config() {
     cat > "$CONFIG_FILE" << CONF
-# Smart Update Config
 AUTO_DETECT=${AUTO_DETECT}
 AUTO_CRONTAB=${AUTO_CRONTAB}
 AUTO_UPDATE_HOST=${AUTO_UPDATE_HOST}
 AUTO_UPDATE_LXC=${AUTO_UPDATE_LXC}
+AUTO_BACKUP=${AUTO_BACKUP}
+AUTO_HEALTH=${AUTO_HEALTH}
 CONF
+    chmod 600 "$CONFIG_FILE"
 }
 
 # ============================================================
-# PERMISSIONS
+# PERMISSIONS & VALIDATION
 # ============================================================
 
 ensure_permissions() {
-    if [[ -f "$SERVICES_FILE" ]]; then
-        chmod 600 "$SERVICES_FILE" 2>/dev/null || true
-    fi
-    if [[ -f "$CONFIG_FILE" ]]; then
-        chmod 600 "$CONFIG_FILE" 2>/dev/null || true
-    fi
+    [[ -f "$SERVICES_FILE" ]] && chmod 600 "$SERVICES_FILE" 2>/dev/null
+    [[ -f "$CONFIG_FILE" ]] && chmod 600 "$CONFIG_FILE" 2>/dev/null
 }
 
 validate_input() {
-    local input="$1"
-    if ! echo "$input" | grep -qE "^[a-zA-Z0-9._/| =-]+$"; then
-        return 1
-    fi
-    return 0
+    echo "$1" | grep -qE "^[a-zA-Z0-9._/| =-]+$"
 }
 
 # ============================================================
 # LOGGING
 # ============================================================
 
-log() {
-    local msg="[$(date '+%Y-%m-%d %H:%M:%S')] $1"
-    echo -e "$msg" | tee -a "$LOG_FILE"
-}
-
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"; }
 log_info() { log "[INFO] $1"; }
 log_ok() { log "[OK] $1"; }
 log_warn() { log "[WARN] $1"; }
 log_error() { log "[ERROR] $1"; }
 
 # ============================================================
-# SERVICE MANAGEMENT
+# FEATURE 1: AUTO-UPDATE SCRIPT
 # ============================================================
 
-cmd_list() {
-    echo -e "\n=== Service Update Entries ==="
-    if [[ -f "$SERVICES_FILE" ]]; then
-        local count=0
-        while IFS='|' read -r ct_id service cmd; do
-            [[ "$ct_id" =~ ^#.*$ || -z "$ct_id" ]] && continue
-            echo "  CT ${ct_id} | ${service} | ${cmd}"
-            count=$((count + 1))
-        done < "$SERVICES_FILE"
-        echo -e "\nTotal: ${count} entries"
+get_remote_version() {
+    curl -fsSL "${GITHUB_RAW}/smart-update" 2>/dev/null | grep "^VERSION=" | cut -d'"' -f2
+}
+
+update_script() {
+    echo "$(msg update_script_title)"
+    echo "$(msg update_script_current): v${VERSION}"
+
+    local remote_version
+    remote_version=$(get_remote_version)
+
+    if [[ -z "$remote_version" ]]; then
+        echo "  [ERROR] Cannot check GitHub"
+        return 1
+    fi
+
+    echo "$(msg update_script_latest): v${remote_version}"
+
+    if [[ "$remote_version" == "$VERSION" ]]; then
+        echo "$(msg update_script_ok)"
+        return 0
+    fi
+
+    echo "$(msg update_script_need)"
+    echo -n "  Downloading... "
+
+    if curl -fsSL "${GITHUB_RAW}/smart-update" -o /usr/local/bin/smart-update; then
+        chmod +x /usr/local/bin/smart-update
+        echo "$(msg update_script_done)"
+        echo "  Run 'smart-update' to use new version"
     else
-        echo "  No services.conf found"
+        echo "[ERROR]"
+        return 1
     fi
 }
 
-cmd_add() {
-    local ct_id="$1"
-    local service="$2"
-    local cmd="$3"
+# ============================================================
+# FEATURE 2: DRY RUN
+# ============================================================
 
-    if [[ -z "$ct_id" || -z "$service" || -z "$cmd" ]]; then
-        echo "Usage: smart-update --add <CT_ID> <SERVICE_NAME> \"<UPDATE_COMMAND>\""
-        exit 1
+dryrun_host() {
+    local updates
+    updates=$(apt list --upgradable 2>/dev/null | grep -c "upgradable" || true)
+    if [[ "$updates" -gt 0 ]]; then
+        echo "  [HOST] ${updates} packages"
+        apt list --upgradable 2>/dev/null | grep "upgradable" | head -10
+    else
+        echo "  [HOST] No updates"
     fi
-
-    validate_input "$ct_id" || { echo "Invalid Container ID"; exit 1; }
-    validate_input "$service" || { echo "Invalid service name"; exit 1; }
-
-    [[ -f "$SERVICES_FILE" ]] && sed -i "/^${ct_id}|${service}|/d" "$SERVICES_FILE"
-    echo "${ct_id}|${service}|${cmd}" >> "$SERVICES_FILE"
-    chmod 600 "$SERVICES_FILE"
-    echo "$(msg added) CT ${ct_id} | ${service}"
 }
 
-cmd_remove() {
-    local ct_id="$1"
-    local service="$2"
+dryrun_container() {
+    local container=$1
+    local name os
+    name=$(pct exec "$container" hostname 2>/dev/null || echo "unknown")
+    os=$(pct config "$container" | awk '/^ostype/ {print $2}')
 
-    if [[ -z "$ct_id" || -z "$service" ]]; then
-        echo "Usage: smart-update --remove <CT_ID> <SERVICE_NAME>"
-        exit 1
-    fi
+    echo "  [CT ${container}] ${name} (${os})"
 
+    # Check service updates
     if [[ -f "$SERVICES_FILE" ]]; then
-        sed -i "/^${ct_id}|${service}|/d" "$SERVICES_FILE"
-        echo "$(msg removed) CT ${ct_id} | ${service}"
+        local entries
+        entries=$(grep "^${container}|" "$SERVICES_FILE" 2>/dev/null || true)
+        while IFS='|' read -r ct_id service cmd; do
+            [[ "$ct_id" == "$container" ]] && echo "    - Service: ${service}"
+        done <<< "$entries"
     fi
 }
 
-# ============================================================
-# AUTO DETECT SERVICES
-# ============================================================
+dryrun_update() {
+    echo "$(msg dryrun_title)"
+    echo ""
+    echo "$(msg dryrun_will)"
+    echo ""
 
-detect_services() {
-    local count=0
-    echo "$(msg detect_title)"
+    dryrun_host
     echo ""
 
     for container in $(pct list 2>/dev/null | awk '{if(NR>1) print $1}'); do
-        local name os
+        dryrun_container "$container"
+    done
+}
+
+# ============================================================
+# FEATURE 3: HEALTH CHECK
+# ============================================================
+
+health_check() {
+    echo "$(msg health_title)"
+    echo ""
+
+    # Host CPU
+    local load
+    load=$(cat /proc/loadavg | awk '{print $1}')
+    local cores
+    cores=$(nproc)
+    local load_pct
+    load_pct=$(echo "$load $cores" | awk '{printf "%.0f", ($1/$2)*100}')
+
+    echo "$(msg health_host)"
+    echo -n "$(msg health_cpu) "
+    if [[ "$load_pct" -lt 70 ]]; then
+        echo "${load} (${load_pct}%) $(msg health_status_ok)"
+    elif [[ "$load_pct" -lt 90 ]]; then
+        echo "${load} (${load_pct}%) $(msg health_status_warn)"
+    else
+        echo "${load} (${load_pct}%) $(msg health_status_crit)"
+    fi
+
+    # Host Memory
+    local mem_total mem_used mem_pct
+    mem_total=$(free -m | awk '/Mem:/{print $2}')
+    mem_used=$(free -m | awk '/Mem:/{print $3}')
+    mem_pct=$((mem_used * 100 / mem_total))
+
+    echo -n "$(msg health_mem) "
+    if [[ "$mem_pct" -lt 70 ]]; then
+        echo "${mem_used}/${mem_total}MB (${mem_pct}%) $(msg health_status_ok)"
+    elif [[ "$mem_pct" -lt 90 ]]; then
+        echo "${mem_used}/${mem_total}MB (${mem_pct}%) $(msg health_status_warn)"
+    else
+        echo "${mem_used}/${mem_total}MB (${mem_pct}%) $(msg health_status_crit)"
+    fi
+
+    # Host Disk
+    local disk_pct
+    disk_pct=$(df / | awk 'NR==2{print $5}' | tr -d '%')
+
+    echo -n "$(msg health_disk) "
+    if [[ "$disk_pct" -lt 70 ]]; then
+        echo "${disk_pct}% $(msg health_status_ok)"
+    elif [[ "$disk_pct" -lt 90 ]]; then
+        echo "${disk_pct}% $(msg health_status_warn)"
+    else
+        echo "${disk_pct}% $(msg health_status_crit)"
+    fi
+
+    echo ""
+
+    # LXC Containers
+    echo "LXC Containers:"
+    for container in $(pct list 2>/dev/null | awk '{if(NR>1) print $1}'); do
+        local name status
         name=$(pct exec "$container" hostname 2>/dev/null || echo "unknown")
-        os=$(pct config "$container" 2>/dev/null | awk '/^ostype/ {print $2}')
+        status=$(pct status "$container" 2>/dev/null | awk '{print $2}')
 
-        echo "CT ${container} (${name}) [${os}]"
+        if [[ "$status" == "running" ]]; then
+            # Check container load
+            local ct_load
+            ct_load=$(pct exec "$container" -- cat /proc/loadavg 2>/dev/null | awk '{print $1}' || echo "0")
+            echo -n "  CT ${container} (${name}): ${status} load=${ct_load} "
+        else
+            echo -n "  CT ${container} (${name}): ${status} "
+        fi
 
-        # Detect services
-        local services
-        services=$(pct exec "$container" -- systemctl list-units --type=service --state=running --no-pager 2>/dev/null | grep -v "getty\|journald\|Network\|dbus\|rsyslog\|systemd-logind\|crond\|networkd\|logind\|user@" | awk '{print $1}' | sed 's/.service//' || true)
+        # Quick health assessment
+        if [[ "$status" == "stopped" ]]; then
+            echo "$(msg health_status_warn)"
+        elif [[ "${ct_load:-0}" > "2.0" ]]; then
+            echo "$(msg health_status_warn)"
+        else
+            echo "$(msg health_status_ok)"
+        fi
+    done
+}
 
-        for svc in $services; do
-            # Skip system services
-            [[ "$svc" =~ ^(ssh|postfix|cron|rsyslog)$ ]] && continue
+# ============================================================
+# FEATURE 4: DOCKER/PODMAN UPDATES
+# ============================================================
 
-            # Check if already configured
-            if grep -q "^${container}|${svc}|" "$SERVICES_FILE" 2>/dev/null; then
-                echo "  - ${svc} (already configured)"
-                continue
-            fi
+detect_containers() {
+    local container=$1
+    local result=""
 
-            # Auto-generate update command based on OS
-            local update_cmd=""
-            case "$os" in
-                alma|centos|fedora|rocky)
-                    update_cmd="pct exec ${container} -- dnf update -y ${svc}"
-                    ;;
-                ubuntu|debian|devuan)
-                    update_cmd="pct exec ${container} -- apt update && apt upgrade -y ${svc}"
-                    ;;
-                alpine)
-                    update_cmd="pct exec ${container} -- apk update && apk upgrade ${svc}"
-                    ;;
-            esac
+    # Check for Podman
+    if pct exec "$container" -- which podman &>/dev/null; then
+        result=$(pct exec "$container" -- podman ps --format "{{.Names}}" 2>/dev/null || true)
+    # Check for Docker
+    elif pct exec "$container" -- which docker &>/dev/null; then
+        result=$(pct exec "$container" -- docker ps --format "{{.Names}}" 2>/dev/null || true)
+    fi
 
-            if [[ -n "$update_cmd" ]]; then
-                echo "  + ${svc} (NEW)"
-                echo "${container}|${svc}|${update_cmd}" >> "$SERVICES_FILE"
-                count=$((count + 1))
-            fi
-        done
-        echo ""
+    echo "$result"
+}
+
+update_containers() {
+    local container=$1
+    local engine=""
+
+    # Detect container engine
+    if pct exec "$container" -- which podman &>/dev/null; then
+        engine="podman"
+    elif pct exec "$container" -- which docker &>/dev/null; then
+        engine="docker"
+    else
+        return 0
+    fi
+
+    local containers
+    containers=$(pct exec "$container" -- $engine ps --format "{{.Names}}" 2>/dev/null || true)
+
+    if [[ -z "$containers" ]]; then
+        return 0
+    fi
+
+    log_info "CT ${container}: Found ${engine} containers"
+
+    while IFS= read -r name; do
+        [[ -z "$name" ]] && continue
+        log_info "CT ${container}: Pulling ${name}..."
+        pct exec "$container" -- $engine pull "$name" >> "$LOG_FILE" 2>&1 || true
+    done <<< "$containers"
+}
+
+# ============================================================
+# FEATURE 5: BACKUP
+# ============================================================
+
+backup_lxc() {
+    local container=$1
+    local name
+    name=$(pct exec "$container" hostname 2>/dev/null || echo "unknown")
+
+    mkdir -p "$BACKUP_DIR"
+
+    local backup_file="${BACKUP_DIR}/ct_${container}_$(date +%Y%m%d_%H%M%S).tar.gz"
+
+    log_info "Backing up CT ${container} (${name})..."
+
+    # Backup config
+    pct config "$container" > "${backup_file}.conf"
+
+    # Backup using vzdump (PVE built-in)
+    if command -v vzdump &>/dev/null; then
+        vzdump "$container" --storage local --compress gzip --mode snapshot >> "$LOG_FILE" 2>&1
+        log_ok "Backup CT ${container}: vzdump"
+    else
+        # Fallback: backup config only
+        log_warn "CT ${container}: vzdump not available, config backed up only"
+    fi
+}
+
+backup_all() {
+    echo "$(msg backup_title)"
+    echo ""
+    echo "$(msg backup_create)"
+    echo ""
+
+    mkdir -p "$BACKUP_DIR"
+
+    for container in $(pct list 2>/dev/null | awk '{if(NR>1) print $1}'); do
+        backup_lxc "$container"
     done
 
-    chmod 600 "$SERVICES_FILE" 2>/dev/null || true
-    echo "$(msg detected) ${count} services"
+    echo ""
+    echo "$(msg backup_done)"
+    ls -lh "$BACKUP_DIR"/*.conf 2>/dev/null | tail -5
 }
 
 # ============================================================
@@ -330,6 +461,12 @@ update_host() {
         log_ok "Host: No updates available"
         return 0
     fi
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo "  [DRY RUN] Would update ${updates} packages"
+        return 0
+    fi
+
     log_info "Host: ${updates} packages to update"
     if apt-get update -qq && apt-get upgrade -y -qq >> "$LOG_FILE" 2>&1; then
         log_ok "Host: Update completed"
@@ -347,8 +484,13 @@ update_container_os() {
     local name os
     name=$(pct exec "$container" hostname 2>/dev/null || echo "unknown")
     os=$(pct config "$container" | awk '/^ostype/ {print $2}')
-    log_info "CT ${container} (${name}): Updating OS..."
 
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo "  [DRY RUN] CT ${container} (${name}): Would update OS"
+        return 0
+    fi
+
+    log_info "CT ${container} (${name}): Updating OS..."
     case "$os" in
     alpine) pct exec "$container" -- ash -c "apk update && apk upgrade" >> "$LOG_FILE" 2>&1 ;;
     archlinux) pct exec "$container" -- bash -c "pacman -Syyu --noconfirm" >> "$LOG_FILE" 2>&1 ;;
@@ -375,11 +517,15 @@ update_container_services() {
     [[ -z "$entries" ]] && return 0
     while IFS='|' read -r ct_id service cmd; do
         if [[ "$ct_id" == "$container" ]]; then
-            log_info "CT ${container}: Updating '${service}'..."
-            if eval "$cmd" >> "$LOG_FILE" 2>&1; then
-                log_ok "CT ${container}: '${service}' updated"
+            if [[ "$DRY_RUN" == "true" ]]; then
+                echo "  [DRY RUN] Would update service: ${service}"
             else
-                log_error "CT ${container}: '${service}' update failed"
+                log_info "CT ${container}: Updating '${service}'..."
+                if eval "$cmd" >> "$LOG_FILE" 2>&1; then
+                    log_ok "CT ${container}: '${service}' updated"
+                else
+                    log_error "CT ${container}: '${service}' update failed"
+                fi
             fi
         fi
     done <<< "$entries"
@@ -399,13 +545,92 @@ update_container() {
     local status
     status=$(pct status "$container" 2>/dev/null || echo "status: unknown")
     if [[ "$status" == "status: stopped" ]]; then
-        log_info "CT ${container}: Starting..."
-        pct start "$container" >> "$LOG_FILE" 2>&1
-        sleep 5
+        if [[ "$DRY_RUN" == "true" ]]; then
+            echo "  [DRY RUN] Would start CT ${container}"
+        else
+            log_info "CT ${container}: Starting..."
+            pct start "$container" >> "$LOG_FILE" 2>&1
+            sleep 5
+        fi
     fi
 
     update_container_os "$container" || true
     update_container_services "$container"
+    update_containers "$container" || true
+}
+
+# ============================================================
+# SERVICE MANAGEMENT
+# ============================================================
+
+cmd_list() {
+    echo -e "\n=== Service Update Entries ==="
+    if [[ -f "$SERVICES_FILE" ]]; then
+        local count=0
+        while IFS='|' read -r ct_id service cmd; do
+            [[ "$ct_id" =~ ^#.*$ || -z "$ct_id" ]] && continue
+            echo "  CT ${ct_id} | ${service} | ${cmd}"
+            count=$((count + 1))
+        done < "$SERVICES_FILE"
+        echo -e "\nTotal: ${count} entries"
+    else
+        echo "  No services.conf found"
+    fi
+}
+
+cmd_add() {
+    local ct_id="$1" service="$2" cmd="$3"
+    [[ -z "$ct_id" || -z "$service" || -z "$cmd" ]] && { echo "Usage: smart-update --add <CT_ID> <SERVICE> \"<CMD>\""; exit 1; }
+    validate_input "$ct_id" || { echo "Invalid Container ID"; exit 1; }
+    validate_input "$service" || { echo "Invalid service name"; exit 1; }
+    [[ -f "$SERVICES_FILE" ]] && sed -i "/^${ct_id}|${service}|/d" "$SERVICES_FILE"
+    echo "${ct_id}|${service}|${cmd}" >> "$SERVICES_FILE"
+    chmod 600 "$SERVICES_FILE"
+    echo "Added: CT ${ct_id} | ${service}"
+}
+
+cmd_remove() {
+    local ct_id="$1" service="$2"
+    [[ -z "$ct_id" || -z "$service" ]] && { echo "Usage: smart-update --remove <CT_ID> <SERVICE>"; exit 1; }
+    if [[ -f "$SERVICES_FILE" ]]; then
+        sed -i "/^${ct_id}|${service}|/d" "$SERVICES_FILE"
+        echo "Removed: CT ${ct_id} | ${service}"
+    fi
+}
+
+detect_services() {
+    local count=0
+    echo "$(msg detect_title)"
+    echo ""
+    for container in $(pct list 2>/dev/null | awk '{if(NR>1) print $1}'); do
+        local name os
+        name=$(pct exec "$container" hostname 2>/dev/null || echo "unknown")
+        os=$(pct config "$container" 2>/dev/null | awk '/^ostype/ {print $2}')
+        echo "CT ${container} (${name}) [${os}]"
+        local services
+        services=$(pct exec "$container" -- systemctl list-units --type=service --state=running --no-pager 2>/dev/null | grep -v "getty\|journald\|Network\|dbus\|rsyslog\|systemd-logind\|crond\|networkd\|logind\|user@" | awk '{print $1}' | sed 's/.service//' || true)
+        for svc in $services; do
+            [[ "$svc" =~ ^(ssh|postfix|cron|rsyslog)$ ]] && continue
+            if grep -q "^${container}|${svc}|" "$SERVICES_FILE" 2>/dev/null; then
+                echo "  - ${svc} (configured)"
+                continue
+            fi
+            local update_cmd=""
+            case "$os" in
+                alma|centos|fedora|rocky) update_cmd="pct exec ${container} -- dnf update -y ${svc}" ;;
+                ubuntu|debian|devuan) update_cmd="pct exec ${container} -- apt update && apt upgrade -y ${svc}" ;;
+                alpine) update_cmd="pct exec ${container} -- apk update && apk upgrade ${svc}" ;;
+            esac
+            if [[ -n "$update_cmd" ]]; then
+                echo "  + ${svc} (NEW)"
+                echo "${container}|${svc}|${update_cmd}" >> "$SERVICES_FILE"
+                count=$((count + 1))
+            fi
+        done
+        echo ""
+    done
+    chmod 600 "$SERVICES_FILE" 2>/dev/null
+    echo "$(msg detected) ${count} new services"
 }
 
 # ============================================================
@@ -425,67 +650,33 @@ show_settings() {
         echo ""
         echo "============================================"
         read -p "  Chon [1-3]: " choice
-
         case "$choice" in
             1)
-                AUTO_DETECT="true"
-                AUTO_CRONTAB="true"
-                AUTO_UPDATE_HOST="true"
-                AUTO_UPDATE_LXC="true"
+                AUTO_DETECT="true" AUTO_CRONTAB="true" AUTO_UPDATE_HOST="true"
+                AUTO_UPDATE_LXC="true" AUTO_BACKUP="true" AUTO_HEALTH="true"
                 save_config
-
-                # Setup crontab
-                echo "$(msg setup_crontab)"
                 if ! crontab -l 2>/dev/null | grep -q "smart-update"; then
                     (crontab -l 2>/dev/null; echo "0 0 * * 1 /usr/local/bin/smart-update >>/var/log/smart-update.log 2>&1") | crontab -
                 fi
-
-                # Auto detect services
                 detect_services
-
-                echo ""
-                echo "$(msg setup_done)"
+                echo "" && echo "$(msg setup_done)"
                 read -p "$(msg enter_continue)"
                 return
                 ;;
             2)
-                # Custom settings
                 echo ""
-                read -p "Auto-detect services? (y/N): " ans
-                AUTO_DETECT=$([[ "$ans" == "y" || "$ans" == "Y" ]] && echo "true" || echo "false")
-
-                read -p "Setup crontab (Monday 00:00)? (y/N): " ans
-                AUTO_CRONTAB=$([[ "$ans" == "y" || "$ans" == "Y" ]] && echo "true" || echo "false")
-
-                read -p "Auto-update Host? (y/N): " ans
-                AUTO_UPDATE_HOST=$([[ "$ans" == "y" || "$ans" == "Y" ]] && echo "true" || echo "false")
-
-                read -p "Auto-update LXC? (y/N): " ans
-                AUTO_UPDATE_LXC=$([[ "$ans" == "y" || "$ans" == "Y" ]] && echo "true" || echo "false")
-
+                for opt in AUTO_DETECT AUTO_CRONTAB AUTO_UPDATE_HOST AUTO_UPDATE_LXC AUTO_BACKUP AUTO_HEALTH; do
+                    read -p "${opt}? (y/N): " ans
+                    eval "${opt}=\$([[ \"\$ans\" == \"y\" || \"\$ans\" == \"Y\" ]] && echo \"true\" || echo \"false\")"
+                done
                 save_config
-
-                # Setup crontab if enabled
-                if [[ "$AUTO_CRONTAB" == "true" ]]; then
-                    echo "$(msg setup_crontab)"
-                    if ! crontab -l 2>/dev/null | grep -q "smart-update"; then
-                        (crontab -l 2>/dev/null; echo "0 0 * * 1 /usr/local/bin/smart-update >>/var/log/smart-update.log 2>&1") | crontab -
-                    fi
-                fi
-
-                # Auto detect if enabled
-                if [[ "$AUTO_DETECT" == "true" ]]; then
-                    detect_services
-                fi
-
-                echo ""
-                echo "$(msg setup_done)"
+                [[ "$AUTO_CRONTAB" == "true" ]] && ! crontab -l 2>/dev/null | grep -q "smart-update" && (crontab -l 2>/dev/null; echo "0 0 * * 1 /usr/local/bin/smart-update >>/var/log/smart-update.log 2>&1") | crontab -
+                [[ "$AUTO_DETECT" == "true" ]] && detect_services
+                echo "" && echo "$(msg setup_done)"
                 read -p "$(msg enter_continue)"
                 return
                 ;;
-            3)
-                return
-                ;;
+            3) return ;;
         esac
     done
 }
@@ -498,7 +689,7 @@ show_menu() {
     while true; do
         clear
         echo "============================================"
-        echo "  $(msg title) v${VERSION}"
+        echo "  $(msg title)"
         echo "============================================"
         echo ""
         echo "  $(msg opt_full)"
@@ -507,19 +698,23 @@ show_menu() {
         echo "  $(msg opt_services)"
         echo "  $(msg opt_add)"
         echo "  $(msg opt_remove)"
+        echo "  $(msg opt_health)"
+        echo "  $(msg opt_backup)"
+        echo "  $(msg opt_dryrun)"
         echo "  $(msg opt_log)"
         echo "  $(msg opt_check)"
+        echo "  $(msg opt_update_script)"
         echo "  $(msg opt_settings)"
         echo "  $(msg opt_exit)"
         echo ""
         echo "============================================"
-        read -p "  Chon [0-9]: " choice
-
+        read -p "  Chon [0-13]: " choice
         case "$choice" in
-            1)
+            1) # Full update
                 echo -e "\n$(msg confirm)"
                 read -p "  " confirm
                 if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
+                    [[ "$AUTO_BACKUP" == "true" ]] && backup_all
                     log "=========================================="
                     log "Smart Update Started"
                     log "=========================================="
@@ -534,97 +729,71 @@ show_menu() {
                     read -p "$(msg enter_continue)"
                 fi
                 ;;
-            2)
+            2) # Host only
                 echo -e "\n$(msg confirm)"
                 read -p "  " confirm
                 if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
-                    log "=========================================="
-                    log "Host Update Started"
-                    log "=========================================="
+                    log "=== Host Update ==="
                     update_host
-                    log "=========================================="
-                    log "Host Update Completed"
-                    log "=========================================="
                     echo -e "\n$(msg done)"
                     read -p "$(msg enter_continue)"
                 fi
                 ;;
-            3)
+            3) # LXC only
                 echo -e "\n$(msg confirm)"
                 read -p "  " confirm
                 if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
-                    log "=========================================="
-                    log "LXC Update Started"
-                    log "=========================================="
+                    [[ "$AUTO_BACKUP" == "true" ]] && backup_all
+                    log "=== LXC Update ==="
                     for container in $(pct list | awk '{if(NR>1) print $1}'); do
                         update_container "$container" || true
                     done
-                    log "=========================================="
-                    log "LXC Update Completed"
-                    log "=========================================="
                     echo -e "\n$(msg done)"
                     read -p "$(msg enter_continue)"
                 fi
                 ;;
-            4)
-                cmd_list
-                read -p "$(msg enter_continue)"
-                ;;
-            5)
+            4) cmd_list; read -p "$(msg enter_continue)" ;;
+            5) # Add service
                 echo ""
-                read -p "$(msg input_ct_id) " ct_id
-                [[ -z "$ct_id" ]] && continue
-                read -p "$(msg input_service) " service
-                [[ -z "$service" ]] && continue
-                read -p "$(msg input_cmd) " cmd
-                [[ -z "$cmd" ]] && continue
+                read -p "Container ID: " ct_id; [[ -z "$ct_id" ]] && continue
+                read -p "Service name: " service; [[ -z "$service" ]] && continue
+                read -p "Update command: " cmd; [[ -z "$cmd" ]] && continue
                 cmd_add "$ct_id" "$service" "$cmd"
                 read -p "$(msg enter_continue)"
                 ;;
-            6)
+            6) # Remove service
                 echo ""
-                read -p "$(msg input_id) " ct_id
-                [[ -z "$ct_id" ]] && continue
-                read -p "$(msg input_service) " service
-                [[ -z "$service" ]] && continue
+                read -p "Container ID: " ct_id; [[ -z "$ct_id" ]] && continue
+                read -p "Service name: " service; [[ -z "$service" ]] && continue
                 cmd_remove "$ct_id" "$service"
                 read -p "$(msg enter_continue)"
                 ;;
-            7)
-                echo -e "\n=== $(msg log_title) ==="
-                if [[ -f "$LOG_FILE" ]]; then
-                    tail -30 "$LOG_FILE"
-                else
-                    echo "  $(msg no_log)"
-                fi
+            7) health_check; read -p "$(msg enter_continue)" ;;
+            8) backup_all; read -p "$(msg enter_continue)" ;;
+            9) dryrun_update; read -p "$(msg enter_continue)" ;;
+            10) # View log
+                echo -e "\n=== Log ==="
+                [[ -f "$LOG_FILE" ]] && tail -30 "$LOG_FILE" || echo "  No log"
                 read -p "$(msg enter_continue)"
                 ;;
-            8)
-                echo -e "\n=== Check Updates ==="
+            11) # Check updates
+                echo -e "\n=== Updates ==="
                 local host_updates
                 host_updates=$(apt list --upgradable 2>/dev/null | grep -c "upgradable" || true)
-                echo "  HOST: ${host_updates} $(msg host_updates)"
+                echo "  HOST: ${host_updates} packages"
                 echo ""
-                echo "  $(msg lxc_containers)"
                 for container in $(pct list | awk '{if(NR>1) print $1}'); do
                     local name os
                     name=$(pct exec "$container" hostname 2>/dev/null || echo "unknown")
                     os=$(pct config "$container" | awk '/^ostype/ {print $2}')
-                    echo "    CT ${container} (${name}) [${os}]"
+                    echo "  CT ${container} (${name}) [${os}]"
                 done
                 read -p "$(msg enter_continue)"
                 ;;
-            9)
-                show_settings
-                ;;
-            0)
-                echo -e "\n$(msg exit_msg)"
-                exit 0
-                ;;
-            *)
-                echo -e "\n$(msg invalid)"
-                sleep 1
-                ;;
+            12) update_script; read -p "$(msg enter_continue)" ;;
+            13) show_settings ;;
+            0) echo -e "\n$(msg exit_msg)"; exit 0 ;;
+            *) echo -e "\n$(msg invalid)"; sleep 1 ;;
         esac
     done
 }
@@ -634,10 +803,7 @@ show_menu() {
 # ============================================================
 
 first_run() {
-    if [[ -f "$FIRST_RUN" ]]; then
-        return 0
-    fi
-
+    [[ -f "$FIRST_RUN" ]] && return 0
     clear
     echo "============================================"
     echo "  $(msg welcome)"
@@ -650,20 +816,13 @@ first_run() {
     echo ""
     echo "============================================"
     read -p "  Chon [1-2]: " lang_choice
-
     case "$lang_choice" in
         1) save_language "vi" ;;
         2) save_language "en" ;;
         *) save_language "vi" ;;
     esac
-
-    # Setup config
     mkdir -p "$CONF_DIR"
-
-    # First run setup
     show_settings
-
-    # Mark first run complete
     touch "$FIRST_RUN"
 }
 
@@ -676,14 +835,11 @@ load_language
 load_config
 ensure_permissions
 
-# Initialize services.conf
-if [[ ! -f "$SERVICES_FILE" ]]; then
-    cat > "$SERVICES_FILE" << 'CONF'
+[[ ! -f "$SERVICES_FILE" ]] && cat > "$SERVICES_FILE" << 'CONF'
 # Smart Update - Service Update Commands
 # Format: CONTAINER_ID|SERVICE_NAME|UPDATE_COMMAND
 CONF
-    chmod 600 "$SERVICES_FILE"
-fi
+chmod 600 "$SERVICES_FILE" 2>/dev/null
 
 # ============================================================
 # MAIN
@@ -695,26 +851,35 @@ case "${1:-}" in
     --add|-a) load_language; cmd_add "${2:-}" "${3:-}" "${4:-}"; exit 0 ;;
     --remove|-r) load_language; cmd_remove "${2:-}" "${3:-}"; exit 0 ;;
     --detect) load_language; detect_services; exit 0 ;;
-    --lang) save_language "${2:-vi}"; echo "Language set to: ${2:-vi}"; exit 0 ;;
+    --health) load_language; health_check; exit 0 ;;
+    --backup) load_language; backup_all; exit 0 ;;
+    --dryrun) DRY_RUN=true; load_language; dryrun_update; exit 0 ;;
+    --update-script) load_language; update_script; exit 0 ;;
+    --lang) save_language "${2:-vi}"; echo "Language: ${2:-vi}"; exit 0 ;;
     --help|-h)
-        echo "Smart Update Manager v${VERSION}"
-        echo ""
-        echo "Usage: smart-update [OPTIONS]"
-        echo ""
-        echo "Options:"
-        echo "  (none)          Interactive menu"
-        echo "  --version, -v   Show version"
-        echo "  --list, -l      List services"
-        echo "  --add, -a       Add service"
-        echo "  --remove, -r    Remove service"
-        echo "  --detect        Auto-detect services"
-        echo "  --lang [vi|en]  Set language"
-        echo "  --help, -h      Show help"
+        cat << HELP
+Smart Update Manager v${VERSION}
+
+Usage: smart-update [OPTIONS]
+
+Options:
+  (none)          Interactive menu
+  --version, -v   Show version
+  --list, -l      List services
+  --add, -a       Add service
+  --remove, -r    Remove service
+  --detect        Auto-detect services
+  --health        System health check
+  --backup        Backup LXC containers
+  --dryrun        Dry run (no actual update)
+  --update-script Update script from GitHub
+  --lang [vi|en]  Set language
+  --help, -h      Show help
+HELP
         exit 0
         ;;
 esac
 
-# First run check
 if [[ $# -eq 0 ]]; then
     first_run
     show_menu
