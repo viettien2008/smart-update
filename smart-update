@@ -608,8 +608,8 @@ detect_services() {
         os=$(pct config "$container" 2>/dev/null | awk '/^ostype/ {print $2}')
         echo "CT ${container} (${name}) [${os}]"
         local services
-        services=$(pct exec "$container" -- systemctl list-units --type=service --state=running --no-pager 2>/dev/null | grep -v "getty\|journald\|Network\|dbus\|rsyslog\|systemd-logind\|crond\|networkd\|logind\|user@" | awk '{print $1}' | sed 's/.service//' || true)
         for svc in $services; do
+        services=$(pct exec "$container" -- systemctl list-units --type=service --state=running --no-pager 2>/dev/null | grep -E "^\s+[a-z]" | grep -v "getty\|journald\|Network\|dbus\|rsyslog\|systemd-logind\|crond\|networkd\|logind\|user@\|\.mount\|\.socket\|\.timer\|\.path\|\.scope\|\.slice" | awk '{print $1}' | sed 's/\.service//' || true)
             [[ "$svc" =~ ^(ssh|postfix|cron|rsyslog)$ ]] && continue
             if grep -q "^${container}|${svc}|" "$SERVICES_FILE" 2>/dev/null; then
                 echo "  - ${svc} (configured)"
